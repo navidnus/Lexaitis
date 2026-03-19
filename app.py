@@ -14,9 +14,12 @@ import streamlit as st
 
 from lexaitis.model import NgramModel
 from lexaitis.texts.library import (
+    CATEGORIES,
     CUSTOM_LABEL,
     all_display_names,
+    category_for,
     description_for,
+    display_names_by_category,
     load_text,
 )
 
@@ -61,8 +64,8 @@ def get_model(text_keys: tuple[str, ...], custom_text: str, max_n: int) -> Ngram
             parts.append(load_text(key))
 
     source = "\n\n".join(parts) if parts else ""
-    # Per-text limit of 30k × number of texts, capped at 150k tokens
-    combined_limit = min(30_000 * max(len(text_keys), 1), 150_000)
+    # Per-text limit of 50k × number of texts, capped at 500k tokens
+    combined_limit = min(50_000 * max(len(text_keys), 1), 500_000)
     return NgramModel(source, max_n=max_n, token_limit=combined_limit)
 
 
@@ -360,15 +363,24 @@ def sidebar() -> tuple:
 
         # ── Text selection ────────────────────────────────────────────────────
         st.subheader("Source texts")
-        text_options = all_display_names() + [CUSTOM_LABEL]
+
+        # Build grouped option list: category headers as disabled separators
+        by_cat = display_names_by_category()
+        grouped_options: list[str] = []
+        for cat in CATEGORIES:
+            if cat in by_cat:
+                grouped_options.extend(by_cat[cat])
+        grouped_options.append(CUSTOM_LABEL)
+
         selected_texts = st.multiselect(
             "Choose one or more texts",
-            options=text_options,
+            options=grouped_options,
             default=[all_display_names()[0]],
             key="text_select",
             help=(
                 "Combine texts to create a richer corpus. "
-                "Each bundled text contributes up to 30 k tokens."
+                "Each bundled text contributes up to 50 k tokens; "
+                "combined corpus is capped at 500 k tokens."
             ),
         )
 
@@ -387,17 +399,19 @@ def sidebar() -> tuple:
             if len(custom_text.strip()) < 50:
                 st.warning("Please paste a longer text (at least ~50 words).")
 
-        # Show per-text descriptions and combined token estimate
+        # Show description / corpus-size info
         bundled_selected = [t for t in selected_texts if t != CUSTOM_LABEL]
         if len(bundled_selected) == 1:
             desc = description_for(bundled_selected[0])
             if desc:
                 st.caption(desc)
         elif len(bundled_selected) > 1:
+            cats_used = sorted({category_for(t) for t in bundled_selected})
             st.caption(
-                f"{len(selected_texts)} text(s) selected — n-gram tables will be "
-                f"built from their combined corpus (up to "
-                f"{min(30 * len(selected_texts), 150):,} k tokens)."
+                f"{len(selected_texts)} text(s) selected "
+                f"({', '.join(cats_used)}) — "
+                f"combined corpus up to "
+                f"{min(50 * len(selected_texts), 500):,} k tokens."
             )
 
         # ── Model settings ────────────────────────────────────────────────────
