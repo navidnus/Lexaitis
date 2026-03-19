@@ -45,13 +45,25 @@ BACKOFF_COLOR = "#ff6b35"   # orange for backoff annotation
 # ──────────────────────────────────────────────────────────────────────────────
 
 @st.cache_resource(show_spinner="Building n-gram tables…")
-def get_model(text_key: str, custom_text: str, max_n: int) -> NgramModel:
-    """Build and cache an NgramModel.  Keyed by text_key + custom_text hash."""
-    if text_key == CUSTOM_LABEL:
-        source = custom_text
-    else:
-        source = load_text(text_key)
-    return NgramModel(source, max_n=max_n, token_limit=30_000)
+def get_model(text_keys: tuple[str, ...], custom_text: str, max_n: int) -> NgramModel:
+    """Build and cache an NgramModel from one or more source texts.
+
+    All selected texts are concatenated before tokenisation.  The token limit
+    is applied to the combined corpus so that adding more texts genuinely
+    increases vocabulary and n-gram coverage.
+    """
+    parts: list[str] = []
+    for key in text_keys:
+        if key == CUSTOM_LABEL:
+            if custom_text.strip():
+                parts.append(custom_text)
+        else:
+            parts.append(load_text(key))
+
+    source = "\n\n".join(parts) if parts else ""
+    # Per-text limit of 30k × number of texts, capped at 150k tokens
+    combined_limit = min(30_000 * max(len(text_keys), 1), 150_000)
+    return NgramModel(source, max_n=max_n, token_limit=combined_limit)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -347,28 +359,46 @@ def sidebar() -> tuple:
         st.divider()
 
         # ── Text selection ────────────────────────────────────────────────────
-        st.subheader("Source text")
+        st.subheader("Source texts")
         text_options = all_display_names() + [CUSTOM_LABEL]
-        selected_text = st.selectbox(
-            "Choose a text",
+        selected_texts = st.multiselect(
+            "Choose one or more texts",
             options=text_options,
+            default=[all_display_names()[0]],
             key="text_select",
+            help=(
+                "Combine texts to create a richer corpus. "
+                "Each bundled text contributes up to 30 k tokens."
+            ),
         )
 
+        if not selected_texts:
+            st.warning("Please select at least one text.")
+            selected_texts = [all_display_names()[0]]
+
         custom_text = ""
-        if selected_text == CUSTOM_LABEL:
+        if CUSTOM_LABEL in selected_texts:
             custom_text = st.text_area(
-                "Paste your text here",
-                height=180,
+                "Paste your custom text here",
+                height=150,
                 placeholder="Paste at least a few hundred words for meaningful results.",
                 key="custom_text",
             )
             if len(custom_text.strip()) < 50:
                 st.warning("Please paste a longer text (at least ~50 words).")
-        else:
-            desc = description_for(selected_text)
+
+        # Show per-text descriptions and combined token estimate
+        bundled_selected = [t for t in selected_texts if t != CUSTOM_LABEL]
+        if len(bundled_selected) == 1:
+            desc = description_for(bundled_selected[0])
             if desc:
                 st.caption(desc)
+        elif len(bundled_selected) > 1:
+            st.caption(
+                f"{len(selected_texts)} text(s) selected — n-gram tables will be "
+                f"built from their combined corpus (up to "
+                f"{min(30 * len(selected_texts), 150):,} k tokens)."
+            )
 
         # ── Model settings ────────────────────────────────────────────────────
         st.divider()
@@ -439,9 +469,9 @@ def sidebar() -> tuple:
             "large language models (e.g. GPT, Claude) achieve their results."
         )
 
-    # Build (or retrieve cached) model
-    cache_custom = custom_text if selected_text == CUSTOM_LABEL else ""
-    model = get_model(selected_text, cache_custom, max_n=7)
+    # Build (or retrieve cached) model from the combined selected corpus
+    cache_custom = custom_text if CUSTOM_LABEL in selected_texts else ""
+    model = get_model(tuple(selected_texts), cache_custom, max_n=7)
 
     return model, n, temperature, use_backoff, gen_length, start_phrase
 
