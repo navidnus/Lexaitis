@@ -607,8 +607,7 @@ def sidebar() -> tuple:
             <div style="text-align:center; padding:14px 0 6px 0;
                         border-top:1px solid #2e4068; margin-top:6px;">
               <div style="font-size:0.72rem; color:#5a7a9a; line-height:1.8;">
-                &copy; 2025 Navid Asgari, Ph.D.<br>
-                Fordham University
+                &copy; 2026 Navid Asgari, Ph.D.
               </div>
             </div>
             """,
@@ -672,6 +671,10 @@ def main() -> None:
             source text, set the context length&nbsp;(<em>n</em>), adjust the
             temperature, and step through each prediction to see the probability
             distribution behind every choice.
+          </div>
+          <div style="margin-top:14px; font-size:0.75rem; color:#5a85b0;
+                      letter-spacing:0.5px;">
+            Navid Asgari, Ph.D.
           </div>
         </div>
         """,
@@ -817,8 +820,7 @@ def main() -> None:
             <hr style="margin-top:32px; border-color:#e2e8f0;">
             <div style="text-align:center; padding:10px 0 4px 0;
                         font-size:0.8rem; color:#999; line-height:1.9;">
-              &copy; 2025 <strong>Navid Asgari, Ph.D.</strong> &nbsp;·&nbsp;
-              Fordham University<br>
+              &copy; 2026 <strong>Navid Asgari, Ph.D.</strong><br>
               <span style="font-size:0.72rem;">
                 Lexaitis is an open educational resource.
                 All bundled texts are in the public domain.
