@@ -59,7 +59,11 @@ st.markdown(
     [data-testid="stSidebar"] .stMarkdown p,
     [data-testid="stSidebar"] .stMarkdown small,
     [data-testid="stSidebar"] .stCaption,
-    [data-testid="stSidebar"] span {
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] [data-testid="stToggleLabel"],
+    [data-testid="stSidebar"] .stToggle label,
+    [data-testid="stSidebar"] .stToggle p {
         color: #c8d6e8 !important;
     }
     [data-testid="stSidebar"] h1,
