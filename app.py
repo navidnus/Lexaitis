@@ -150,11 +150,19 @@ def render_generated_text(
 def render_prob_chart(
     prob_dict: dict[str, float],
     chosen_token: str,
-    actual_order: int,
+    gen_order: int,
     requested_n: int,
+    display_n: int,
     top_k: int = 15,
 ) -> go.Figure:
-    """Return a horizontal Plotly bar chart of top-k candidate probabilities."""
+    """Return a horizontal Plotly bar chart of top-k candidate probabilities.
+
+    The chart always shows a *bigram* distribution (display_n=2) when the
+    model uses n>=3, guaranteeing multiple candidates with varying
+    probabilities.  The bar for the word actually chosen by the n-gram model
+    is highlighted in red-pink even if it is not the highest-probability word
+    in the bigram distribution.
+    """
     items = sorted(prob_dict.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
     if not items:
         fig = go.Figure()
@@ -165,36 +173,53 @@ def render_prob_chart(
     probs = [p for _, p in items]
     colors = [CHOSEN_BAR if t == chosen_token else DEFAULT_BAR for t in labels]
 
+    # If chosen token is not in the top-k (possible when gen_order > display_n),
+    # add it explicitly at the bottom so it is always visible.
+    extra_traces = []
+    if chosen_token not in labels:
+        chosen_p = prob_dict.get(chosen_token, 0.0)
+        extra_traces = [
+            go.Bar(
+                x=[chosen_p],
+                y=[chosen_token],
+                orientation="h",
+                marker_color=CHOSEN_BAR,
+                hovertemplate="%{y}: %{x:.3f}<extra></extra>",
+                showlegend=False,
+            )
+        ]
+
     fig = go.Figure(
-        go.Bar(
-            x=probs,
-            y=labels,
-            orientation="h",
-            marker_color=colors,
-            hovertemplate="%{y}: %{x:.3f}<extra></extra>",
-        )
+        [
+            go.Bar(
+                x=probs,
+                y=labels,
+                orientation="h",
+                marker_color=colors,
+                hovertemplate="%{y}: %{x:.3f}<extra></extra>",
+            )
+        ]
+        + extra_traces
     )
 
-    if actual_order < requested_n and actual_order > 0:
-        backoff_note = f"  ↓ backed off to {actual_order}-gram"
-    elif actual_order == 0:
-        backoff_note = "  ✗ no candidates found"
+    # Title: explain what order is shown vs. what order was used for prediction
+    if display_n == requested_n:
+        title = f"Candidate next words  ·  {display_n}-gram distribution"
     else:
-        backoff_note = ""
-
-    title = (
-        f"Next-token probabilities  ·  context = {actual_order}-gram"
-        + backoff_note
-    )
+        title = (
+            f"Candidate next words  ·  {display_n}-gram distribution  "
+            f"(model predicted using {gen_order}-gram context)"
+        )
 
     fig.update_layout(
         title={"text": title, "x": 0, "font": {"size": 13}},
         xaxis_title="Probability",
         yaxis={"autorange": "reversed", "tickfont": {"size": 12}},
-        height=max(280, 28 * len(items)),
+        height=max(280, 28 * (len(items) + len(extra_traces))),
         margin={"l": 10, "r": 10, "t": 50, "b": 30},
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
+        barmode="overlay",
     )
     return fig
 
@@ -327,19 +352,40 @@ def generation_panel(
 
     # ── Probability chart (last step) ─────────────────────────────────────────
     if show_chart and prob_dicts:
-        last_prob = prob_dicts[-1]
-        last_order = orders[-1]
+        last_gen_order = orders[-1]
         last_token = tokens[-1]
-        fig = render_prob_chart(last_prob, last_token, last_order, n)
+
+        # Always show bigram distribution for n>=3 so the chart has
+        # multiple candidates with varying probabilities.
+        display_prob, display_order, display_n = model.get_chart_probs(
+            tokens, n, temperature
+        )
+        if not display_prob:
+            display_prob = prob_dicts[-1]
+            display_order = last_gen_order
+            display_n = last_gen_order
+
+        fig = render_prob_chart(
+            display_prob, last_token, last_gen_order, n, display_n
+        )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-        # Backoff banner (if backoff fired on the last step)
-        if last_order < n and last_order > 0:
+        # Explanatory note when chart uses a lower order than generation
+        if display_n < n:
+            st.caption(
+                f"The chart shows the {display_n}-gram distribution — all words "
+                f"that can follow the preceding word, with their relative probabilities. "
+                f"The highlighted word is what the {n}-gram model actually chose "
+                f"given its longer context."
+            )
+
+        # Backoff banner (if backoff fired during generation)
+        if last_gen_order < n and last_gen_order > 0:
             st.info(
                 f"Backoff triggered: the {n}-gram context was not found in the training "
-                f"text. The model fell back to a {last_order}-gram distribution."
+                f"text. The model fell back to a {last_gen_order}-gram distribution."
             )
-        elif last_order == 0:
+        elif last_gen_order == 0:
             st.error(
                 "No candidates found even after backoff (or backoff is disabled). "
                 "Try enabling backoff, lowering n, or choosing a different start phrase."

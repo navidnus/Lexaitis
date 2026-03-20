@@ -239,6 +239,59 @@ class NgramModel:
         r = rng or random
         return r.choice(self.tokens)
 
+    def get_chart_probs(
+        self,
+        tokens: list[str],
+        generation_n: int,
+        temperature: float = 1.0,
+    ) -> tuple[dict[str, float], int, int]:
+        """Return the probability distribution used for the chart display.
+
+        For *generation_n* >= 3 the chart always shows the **bigram**
+        distribution (conditioned on the single token that immediately
+        preceded the last generated word).  This guarantees the chart has
+        multiple candidates with varying probabilities, making the sampling
+        step visible and meaningful to students.
+
+        For *generation_n* <= 2 the chart shows the actual distribution that
+        was used for generation.
+
+        Returns
+        -------
+        prob_dict : dict[str, float]
+            Token → probability, sorted descending.
+        display_order : int
+            The n-gram order whose table was actually consulted.
+        display_n : int
+            The intended display order (2 for n>=3, else generation_n).
+        """
+        display_n = 2 if generation_n >= 3 else generation_n
+
+        # Context for the display distribution is the (display_n - 1) tokens
+        # that preceded the most recently generated token.
+        # tokens[-1] is the last generated word; we want the context before it.
+        context_len = display_n - 1
+        if context_len == 0:
+            context: tuple[str, ...] = ()
+        elif len(tokens) > 1:
+            context = tuple(tokens[-(context_len + 1) : -1])
+        else:
+            context = ()
+
+        candidates, display_order = self.get_candidates(
+            context, display_n, use_backoff=True
+        )
+
+        if not candidates:
+            return {}, 0, display_n
+
+        tokens_list, probs = _apply_temperature(candidates, temperature)
+        prob_dict = {t: float(p) for t, p in zip(tokens_list, probs)}
+        prob_dict = dict(
+            sorted(prob_dict.items(), key=lambda kv: kv[1], reverse=True)
+        )
+        return prob_dict, display_order, display_n
+
     def __repr__(self) -> str:
         return (
             f"NgramModel(vocab={len(self.vocab)}, "
