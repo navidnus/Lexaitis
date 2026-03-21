@@ -394,6 +394,33 @@ def context_info_box(tokens: list[str], n: int, start_len: int) -> str:
     )
 
 
+def _resample_from_raw(
+    raw_counts: dict[str, int], temperature: float
+) -> tuple[str, dict[str, float]]:
+    """Draw a new token from *raw_counts* scaled by *temperature*."""
+    toks = list(raw_counts.keys())
+    counts = np.array([raw_counts[t] for t in toks], dtype=float)
+    if temperature < 0.05:
+        probs = np.zeros(len(toks))
+        probs[int(np.argmax(counts))] = 1.0
+    else:
+        log_c = np.log(counts)
+        scaled = log_c / temperature
+        shifted = scaled - scaled.max()
+        exp_v = np.exp(shifted)
+        probs = exp_v / exp_v.sum()
+    idx = int(np.random.choice(len(toks), p=probs))
+    new_token = toks[idx]
+    prob_dict = dict(
+        sorted(
+            {t: float(p) for t, p in zip(toks, probs)}.items(),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )
+    )
+    return new_token, prob_dict
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Single-panel generation UI  (reused in both Generate tab and Compare tab)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -424,7 +451,8 @@ def generation_panel(
     start_len = len(tokens) - len(prob_dicts)  # number of seed tokens
 
     # ── Buttons ──────────────────────────────────────────────────────────────
-    col_step, col_run, col_reset, col_spacer = st.columns([1, 1, 1, 5])
+    has_generated = len(tokens) > start_len
+    col_step, col_run, col_reset, col_resample, col_spacer = st.columns([1, 1, 1, 1.4, 3])
 
     with col_step:
         step_clicked = st.button(
@@ -446,10 +474,28 @@ def generation_panel(
             key=f"{prefix}_reset",
             help="Clear generated text and start over",
         )
+    with col_resample:
+        resample_clicked = st.button(
+            "Re-sample last ↻",
+            key=f"{prefix}_resample",
+            disabled=not has_generated or not raw_counts_list,
+            help=(
+                "Re-draw the last word at the current temperature. "
+                "Try clicking multiple times to see the randomness, "
+                "or change the temperature first."
+            ),
+        )
 
     # ── Handle button actions ─────────────────────────────────────────────────
     if reset_clicked:
         init_gen_state(prefix, seed_tokens)
+        st.rerun()
+
+    if resample_clicked and has_generated and raw_counts_list:
+        new_token, new_prob_dict = _resample_from_raw(raw_counts_list[-1], temperature)
+        st.session_state[_ss_key(prefix, "tokens")][-1] = new_token
+        st.session_state[_ss_key(prefix, "prob_dicts")][-1] = new_prob_dict
+        # raw_counts_list[-1] is unchanged: same context, just a new draw
         st.rerun()
 
     if step_clicked and not done:
