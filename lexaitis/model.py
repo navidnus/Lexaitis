@@ -158,7 +158,7 @@ class NgramModel:
         n: int,
         temperature: float = 1.0,
         use_backoff: bool = True,
-    ) -> tuple[str | None, dict[str, float], int]:
+    ) -> tuple[str | None, dict[str, float], dict[str, int], int]:
         """Sample one token given *context*.
 
         Returns
@@ -168,6 +168,9 @@ class NgramModel:
         prob_dict:
             Mapping from candidate token to its probability (after temperature
             scaling).  Sorted descending by probability.
+        raw_counts:
+            Mapping from candidate token to its raw frequency count in the
+            training text.  Used for the temperature-effect visualisation.
         actual_order:
             The n-gram order that was actually used (may be < n if backoff
             fired, or 0 if no candidates were found at all).
@@ -175,7 +178,7 @@ class NgramModel:
         candidates, actual_order = self.get_candidates(context, n, use_backoff)
 
         if not candidates:
-            return None, {}, 0
+            return None, {}, {}, 0
 
         tokens_list, probs = _apply_temperature(candidates, temperature)
         sampled_idx = int(np.random.choice(len(tokens_list), p=probs))
@@ -185,7 +188,8 @@ class NgramModel:
         prob_dict = dict(
             sorted(prob_dict.items(), key=lambda kv: kv[1], reverse=True)
         )
-        return next_token, prob_dict, actual_order
+        raw_counts = dict(candidates)
+        return next_token, prob_dict, raw_counts, actual_order
 
     # ------------------------------------------------------------------
     # Multi-step generation (generator)
@@ -198,8 +202,8 @@ class NgramModel:
         length: int,
         temperature: float = 1.0,
         use_backoff: bool = True,
-    ) -> Generator[tuple[str, dict[str, float], int], None, None]:
-        """Yield *(token, prob_dict, actual_order)* for each generated step.
+    ) -> Generator[tuple[str, dict[str, float], dict[str, int], int], None, None]:
+        """Yield *(token, prob_dict, raw_counts, actual_order)* for each generated step.
 
         Parameters
         ----------
@@ -218,13 +222,13 @@ class NgramModel:
 
         for _ in range(length):
             context = tuple(generated[-(n - 1) :]) if n > 1 else ()
-            next_token, prob_dict, actual_order = self.sample_next(
+            next_token, prob_dict, raw_counts, actual_order = self.sample_next(
                 context, n, temperature, use_backoff
             )
             if next_token is None:
                 return
             generated.append(next_token)
-            yield next_token, prob_dict, actual_order
+            yield next_token, prob_dict, raw_counts, actual_order
 
     # ------------------------------------------------------------------
     # Utility

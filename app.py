@@ -21,6 +21,7 @@ from lexaitis.texts.library import (
     description_for,
     display_names_by_category,
     load_text,
+    starter_phrases_for,
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -170,22 +171,27 @@ def _ss_key(prefix: str, key: str) -> str:
 def init_gen_state(prefix: str, start_tokens: list[str]) -> None:
     """Initialise (or re-initialise) generation state for a panel."""
     st.session_state[_ss_key(prefix, "tokens")] = list(start_tokens)
-    st.session_state[_ss_key(prefix, "prob_dicts")] = []   # list of prob_dict per step
-    st.session_state[_ss_key(prefix, "orders")] = []       # actual order used per step
+    st.session_state[_ss_key(prefix, "prob_dicts")] = []
+    st.session_state[_ss_key(prefix, "raw_counts")] = []   # raw frequency counts per step
+    st.session_state[_ss_key(prefix, "orders")] = []
     st.session_state[_ss_key(prefix, "done")] = False
 
 
-def get_gen_state(prefix: str) -> tuple[list, list, list, bool]:
+def get_gen_state(prefix: str) -> tuple[list, list, list, list, bool]:
     tokens = st.session_state.get(_ss_key(prefix, "tokens"), [])
     prob_dicts = st.session_state.get(_ss_key(prefix, "prob_dicts"), [])
+    raw_counts_list = st.session_state.get(_ss_key(prefix, "raw_counts"), [])
     orders = st.session_state.get(_ss_key(prefix, "orders"), [])
     done = st.session_state.get(_ss_key(prefix, "done"), False)
-    return tokens, prob_dicts, orders, done
+    return tokens, prob_dicts, raw_counts_list, orders, done
 
 
-def append_token(prefix: str, token: str, prob_dict: dict, order: int) -> None:
+def append_token(
+    prefix: str, token: str, prob_dict: dict, raw_counts: dict, order: int
+) -> None:
     st.session_state[_ss_key(prefix, "tokens")].append(token)
     st.session_state[_ss_key(prefix, "prob_dicts")].append(prob_dict)
+    st.session_state[_ss_key(prefix, "raw_counts")].append(raw_counts)
     st.session_state[_ss_key(prefix, "orders")].append(order)
 
 
@@ -294,6 +300,80 @@ def render_prob_chart(
     return fig
 
 
+def render_temperature_chart(
+    raw_counts: dict[str, int],
+    chosen_token: str,
+    current_temp: float,
+    top_k: int = 6,
+) -> go.Figure | None:
+    """Return a Plotly line chart showing how temperature reshapes the distribution.
+
+    X-axis: temperature (0.05 → 2.0).
+    Y-axis: probability of each top-k candidate.
+    Vertical dashed line marks the current temperature setting.
+    The chosen token's line is highlighted in red-pink.
+    """
+    if len(raw_counts) < 2:
+        return None
+
+    top_items = sorted(raw_counts.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
+    all_counts = np.array([c for _, c in raw_counts.items()], dtype=float)
+    top_tokens = [t for t, _ in top_items]
+
+    temps = np.linspace(0.05, 2.0, 80)
+    fig = go.Figure()
+
+    for tok in top_tokens:
+        tok_idx = list(raw_counts.keys()).index(tok)
+        probs_at_t = []
+        for t in temps:
+            log_c = np.log(all_counts)
+            scaled = log_c / t
+            shifted = scaled - scaled.max()
+            exp_v = np.exp(shifted)
+            p = exp_v / exp_v.sum()
+            probs_at_t.append(float(p[tok_idx]))
+
+        is_chosen = tok == chosen_token
+        fig.add_trace(
+            go.Scatter(
+                x=temps,
+                y=probs_at_t,
+                mode="lines",
+                name=f'"{tok}"',
+                line=dict(
+                    width=3 if is_chosen else 1.5,
+                    color=CHOSEN_BAR if is_chosen else None,
+                    dash="solid",
+                ),
+            )
+        )
+
+    fig.add_vline(
+        x=current_temp,
+        line_dash="dash",
+        line_color="#888",
+        line_width=1.5,
+        annotation_text=f" T = {current_temp:.2f}",
+        annotation_position="top right",
+        annotation_font_size=11,
+    )
+
+    fig.update_layout(
+        title={"text": "How temperature reshapes the distribution", "x": 0, "font": {"size": 13}},
+        xaxis_title="Temperature",
+        yaxis_title="Probability",
+        xaxis={"range": [0.05, 2.0]},
+        yaxis={"range": [0, 1.0]},
+        height=240,
+        margin={"l": 10, "r": 10, "t": 45, "b": 30},
+        legend={"orientation": "h", "y": -0.25, "font": {"size": 11}},
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
 def context_info_box(tokens: list[str], n: int, start_len: int) -> str:
     """Return an HTML snippet describing the current context."""
     ctx_size = n - 1
@@ -340,7 +420,7 @@ def generation_panel(
     if state_key not in st.session_state:
         init_gen_state(prefix, seed_tokens)
 
-    tokens, prob_dicts, orders, done = get_gen_state(prefix)
+    tokens, prob_dicts, raw_counts_list, orders, done = get_gen_state(prefix)
     start_len = len(tokens) - len(prob_dicts)  # number of seed tokens
 
     # ── Buttons ──────────────────────────────────────────────────────────────
@@ -376,13 +456,13 @@ def generation_panel(
         remaining = gen_length - (len(tokens) - start_len)
         if remaining > 0:
             ctx = tuple(tokens[-(n - 1) :]) if n > 1 else ()
-            tok, prob_dict, actual_order = model.sample_next(
+            tok, prob_dict, raw_counts, actual_order = model.sample_next(
                 ctx, n, temperature, use_backoff
             )
             if tok is None:
                 set_done(prefix, True)
             else:
-                append_token(prefix, tok, prob_dict, actual_order)
+                append_token(prefix, tok, prob_dict, raw_counts, actual_order)
             remaining -= 1
             if remaining <= 0:
                 set_done(prefix, True)
@@ -390,15 +470,15 @@ def generation_panel(
 
     if run_clicked and not done:
         remaining = gen_length - (len(tokens) - start_len)
-        for tok, prob_dict, actual_order in model.generate(
+        for tok, prob_dict, raw_counts, actual_order in model.generate(
             tokens, n, remaining, temperature, use_backoff
         ):
-            append_token(prefix, tok, prob_dict, actual_order)
+            append_token(prefix, tok, prob_dict, raw_counts, actual_order)
         set_done(prefix, True)
         st.rerun()
 
     # Reload state after possible mutations
-    tokens, prob_dicts, orders, done = get_gen_state(prefix)
+    tokens, prob_dicts, raw_counts_list, orders, done = get_gen_state(prefix)
     start_len = len(tokens) - len(prob_dicts)
 
     # ── Generated text display ────────────────────────────────────────────────
@@ -420,9 +500,10 @@ def generation_panel(
         elif done:
             st.warning("Generation stopped: no candidates found for current context.")
 
-    # ── Probability chart (last step) ─────────────────────────────────────────
+    # ── Probability chart + temperature chart ─────────────────────────────────
     if show_chart and prob_dicts:
         last_prob = prob_dicts[-1]
+        last_raw = raw_counts_list[-1] if raw_counts_list else {}
         last_order = orders[-1]
         last_token = tokens[-1]
 
@@ -449,6 +530,21 @@ def generation_panel(
                 "No candidates found even after backoff (or backoff is disabled). "
                 "Try enabling backoff, lowering n, or choosing a different start phrase."
             )
+
+        # Temperature effect chart (only when there are 2+ candidates)
+        if last_raw and len(last_raw) >= 2:
+            temp_fig = render_temperature_chart(last_raw, last_token, temperature)
+            if temp_fig:
+                st.plotly_chart(
+                    temp_fig,
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
+                st.caption(
+                    "Move the **Temperature** slider to see the dashed line shift — "
+                    "and watch how the distribution concentrates (low T) or "
+                    "flattens (high T). The red line is the word that was chosen."
+                )
     elif show_chart:
         st.caption(
             "The probability chart will appear here after the first token is generated."
@@ -585,6 +681,30 @@ def sidebar() -> tuple:
             placeholder="Leave blank for a random start token",
             key="start_phrase",
         )
+
+        # Show curated suggestions when exactly one bundled text is selected
+        _bundled_only = [t for t in selected_texts if t != CUSTOM_LABEL]
+        suggestions = starter_phrases_for(_bundled_only[0]) if len(_bundled_only) == 1 else []
+        if suggestions:
+            with st.expander("Suggested starting phrases"):
+                for phrase, rec_n, note in suggestions:
+                    col_btn, col_n = st.columns([5, 1])
+                    with col_btn:
+                        if st.button(
+                            f'"{phrase}"',
+                            key=f"suggest__{phrase}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["start_phrase"] = phrase
+                            st.session_state["n_slider"] = rec_n
+                            st.rerun()
+                    with col_n:
+                        st.markdown(
+                            f"<div style='padding-top:6px;font-size:0.75rem;"
+                            f"color:#8aaac8;text-align:center'>n={rec_n}</div>",
+                            unsafe_allow_html=True,
+                        )
+                    st.caption(note)
 
         gen_length = st.slider(
             "Tokens to generate",

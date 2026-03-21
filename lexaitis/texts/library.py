@@ -332,6 +332,95 @@ BUNDLED_TEXTS: dict[str, dict] = {
 
 CUSTOM_LABEL = "Custom text (paste below)"
 
+# ---------------------------------------------------------------------------
+# Curated starter phrases
+# Each entry: (phrase, recommended_n, explanatory_note)
+# Phrases are lowercase to match the tokeniser.
+# ---------------------------------------------------------------------------
+
+STARTER_PHRASES: dict[str, list[tuple[str, int, str]]] = {
+    "Alice in Wonderland — Lewis Carroll": [
+        ("alice was beginning to get very",  5, "The famous opening — try n=5 to see near-verbatim reproduction"),
+        ("curiouser and",                     3, "Only one word can follow at n=3 — a vivid sparsity example"),
+        ("off with",                          3, "Try n=3; then raise to n=4 and see the context narrow"),
+        ("we're all mad",                     4, "Classic line — watch how n=4 constrains the choice"),
+        ("said the",                          3, "Very common context; many candidates — good for temperature demo"),
+    ],
+    "Hamlet — William Shakespeare": [
+        ("to be or",                          4, "At n=4 the model almost certainly produces 'not'"),
+        ("the rest is",                       4, "Famous closing — try n=4 to see sparsity at work"),
+        ("something is rotten in",            5, "Long context almost reproduces the line verbatim"),
+        ("to thine own self",                 5, "Try n=5 vs n=3 and compare how much freedom the model has"),
+        ("what a piece of",                   5, "Dense philosophical passage — interesting at n=3 and n=5"),
+    ],
+    "Romeo and Juliet — William Shakespeare": [
+        ("what light through yonder",         4, "Famous balcony line — try n=4"),
+        ("a rose by any other",               5, "Raises the question: how much context reproduces quotes?"),
+        ("parting is such sweet",             5, "Try high n to see near-verbatim; lower n for variety"),
+        ("romeo romeo wherefore art",         4, "Iconic phrase — watch probability = 1 at n=4"),
+    ],
+    "Macbeth — William Shakespeare": [
+        ("double double toil and",            5, "The witches' chant — almost deterministic at n=5"),
+        ("out damned",                        3, "Only one natural continuation — clean sparsity demo"),
+        ("is this a dagger",                  5, "Famous soliloquy opening"),
+        ("tomorrow and tomorrow and",         4, "Beautifully repetitive — great for showing loops"),
+    ],
+    "Pride and Prejudice — Jane Austen": [
+        ("it is a truth universally",         6, "Famous opening — n=6 reproduces it verbatim; try n=3 for variety"),
+        ("mr darcy",                          3, "Very common bigram context with many interesting continuations"),
+        ("elizabeth could not",               4, "Watch how the 4-gram narrows the choices sharply"),
+        ("she was a woman of",                5, "Common narrative template — good temperature demo"),
+    ],
+    "Moby-Dick — Herman Melville": [
+        ("call me",                           3, "At n=3 the model has very few choices — classic sparsity"),
+        ("the great white",                   4, "Try n=4; then n=3 and see how context shapes the prediction"),
+        ("it is not down",                    5, "From the opening paragraph — interesting at various n"),
+        ("the sea the sea",                   3, "Repetitive pattern — great for showing how loops form"),
+    ],
+    "A Tale of Two Cities — Charles Dickens": [
+        ("it was the best of",                6, "Famous opening — try n=6 vs n=3"),
+        ("it was the worst of",               6, "Same context pattern; compare output with previous phrase"),
+        ("it was the",                        4, "Weaker context — many more candidates, richer distribution"),
+        ("recalled to",                       3, "Chapter title phrase — try with backoff on and off"),
+    ],
+    "The Adventures of Sherlock Holmes — Arthur Conan Doyle": [
+        ("the game is",                       4, "High probability of 'afoot' at n=4 — clean determinism demo"),
+        ("you know my",                       4, "Famous Watson exchange — try n=4"),
+        ("when you have eliminated the",      5, "Long context reproduces the famous deduction line"),
+        ("elementary",                        2, "Rare word — watch backoff fire at high n"),
+    ],
+    "Dracula — Bram Stoker": [
+        ("the blood is",                      4, "Famous line — nearly deterministic at n=4"),
+        ("there are darknesses in",           5, "Atmospheric phrase — rich at n=3"),
+        ("i am dracula and i",                5, "Self-introduction — try n=5 vs n=3"),
+    ],
+    "Frankenstein — Mary Shelley": [
+        ("it was on a dreary night",          6, "Famous creation scene — very sparse at n=6"),
+        ("the monster",                       3, "Common context; try temperature slider to see variation"),
+        ("i had worked hard for nearly",      6, "Long specific context — demonstrates sparsity clearly"),
+    ],
+    "Gettysburg Address — Abraham Lincoln": [
+        ("four score and seven",              5, "Opening phrase — almost completely deterministic at n=5"),
+        ("we here highly resolve",            5, "The climactic pledge — watch how n controls memorisation"),
+        ("government of the people",          4, "Famous closing line — try n=4 vs n=3"),
+    ],
+    "On the Origin of Species — Charles Darwin": [
+        ("natural selection",                 3, "Core concept — many continuations at n=3"),
+        ("i have called this principle",      5, "Darwin's explanatory style — try n=5"),
+        ("the struggle for existence",        4, "Key phrase — compare with fiction texts for style contrast"),
+    ],
+    "Leaves of Grass — Walt Whitman": [
+        ("i celebrate myself and",            5, "Famous opening of Song of Myself"),
+        ("i am large i contain",              5, "Famous contradiction — try n=5 for near-verbatim"),
+        ("the grass",                         3, "Very common context in the poem — many continuations"),
+    ],
+    "Walden — Henry David Thoreau": [
+        ("i went to the woods because",       6, "Famous rationale — highly constrained at n=6"),
+        ("simplicity simplicity",             3, "Deliberately repetitive — loops emerge quickly"),
+        ("the mass of men lead lives of",     6, "Famous aphorism — try n=6 vs n=3"),
+    ],
+}
+
 # Ordered list of categories for display grouping
 CATEGORIES = [
     "Fiction",
@@ -376,3 +465,8 @@ def description_for(display_name: str) -> str:
 
 def category_for(display_name: str) -> str:
     return BUNDLED_TEXTS.get(display_name, {}).get("category", "")
+
+
+def starter_phrases_for(display_name: str) -> list[tuple[str, int, str]]:
+    """Return curated (phrase, recommended_n, note) tuples for *display_name*."""
+    return STARTER_PHRASES.get(display_name, [])

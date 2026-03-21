@@ -4,6 +4,7 @@ from .library import (
     display_names_by_category,
     description_for,
     category_for,
+    starter_phrases_for,
     CUSTOM_LABEL,
     CATEGORIES,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "display_names_by_category",
     "description_for",
     "category_for",
+    "starter_phrases_for",
     "CUSTOM_LABEL",
     "CATEGORIES",
 ]
