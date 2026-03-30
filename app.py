@@ -603,6 +603,13 @@ def generation_panel(
 
 def sidebar() -> tuple:
     """Render sidebar controls; return (model, n, temperature, use_backoff, gen_length, start_phrase)."""
+    # Resolve any pending phrase/n set by the suggestion buttons.
+    # Must happen BEFORE any widget with those keys is rendered.
+    if "_pending_phrase" in st.session_state:
+        st.session_state["start_phrase"] = st.session_state.pop("_pending_phrase")
+    if "_pending_n" in st.session_state:
+        st.session_state["n_slider"] = st.session_state.pop("_pending_n")
+
     with st.sidebar:
         st.markdown(
             """
@@ -741,8 +748,8 @@ def sidebar() -> tuple:
                             key=f"suggest__{phrase}",
                             use_container_width=True,
                         ):
-                            st.session_state["start_phrase"] = phrase
-                            st.session_state["n_slider"] = rec_n
+                            st.session_state["_pending_phrase"] = phrase
+                            st.session_state["_pending_n"] = rec_n
                             st.rerun()
                     with col_n:
                         st.markdown(
@@ -997,5 +1004,56 @@ def main() -> None:
         )
 
 
+def password_gate() -> bool:
+    """
+    Return True when the user is authenticated.
+    The correct password is stored in st.secrets["password"].
+    Falls back gracefully when no secret is configured (local dev without secrets.toml).
+    """
+    # If no password is configured, skip the gate entirely
+    correct_pw = st.secrets.get("password", None)
+    if not correct_pw:
+        return True
+
+    if st.session_state.get("_authenticated"):
+        return True
+
+    # ── Login screen ─────────────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div style="background:linear-gradient(135deg,#1b2a4a 0%,#2e5090 100%);
+                    border-radius:12px; padding:32px 40px 28px 40px;
+                    max-width:420px; margin:80px auto 0 auto;
+                    box-shadow:0 4px 24px rgba(0,0,0,0.18); text-align:center;">
+          <div style="font-family:'Georgia',serif; font-size:2.4rem;
+                      font-weight:700; color:#ffffff; letter-spacing:3px;">
+            Lexaitis
+          </div>
+          <div style="font-size:0.78rem; color:#8aaac8; margin-top:6px;
+                      letter-spacing:1px; text-transform:uppercase;">
+            Language Model Explorer
+          </div>
+          <div style="margin-top:18px; font-size:0.88rem; color:#c4d4e8;">
+            Enter the course password to continue.
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_l, col_m, col_r = st.columns([1, 2, 1])
+    with col_m:
+        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        pw = st.text_input("Password", type="password", key="_pw_input", label_visibility="collapsed", placeholder="Password")
+        if st.button("Enter", use_container_width=True, type="primary"):
+            if pw == correct_pw:
+                st.session_state["_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password. Please try again.")
+    return False
+
+
 if __name__ == "__main__":
-    main()
+    if password_gate():
+        main()
