@@ -5,6 +5,7 @@ Streamlit application entry point.
 
 from __future__ import annotations
 
+import os
 import random
 import textwrap
 
@@ -134,6 +135,21 @@ CHOSEN_BAR = "#ef476f"      # red-pink for selected token bar
 DEFAULT_BAR = "#118ab2"     # steel blue for candidate bars
 BACKOFF_COLOR = "#ff6b35"   # orange for backoff annotation
 
+# Corpus size limits.  Very large n-gram tables can exceed Streamlit Community
+# Cloud memory (~1 GB) and crash the app with a generic "Error running app."
+_PER_TEXT_TOKEN_CAP = 50_000
+
+
+def _combined_token_cap() -> int:
+    raw = os.environ.get("LEXAITIS_COMBINED_TOKEN_CAP", "150000")
+    try:
+        return max(10_000, int(raw))
+    except ValueError:
+        return 150_000
+
+
+_COMBINED_TOKEN_CAP = _combined_token_cap()
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Cached model builder
 # ──────────────────────────────────────────────────────────────────────────────
@@ -155,8 +171,11 @@ def get_model(text_keys: tuple[str, ...], custom_text: str, max_n: int) -> Ngram
             parts.append(load_text(key))
 
     source = "\n\n".join(parts) if parts else ""
-    # Per-text limit of 50k × number of texts, capped at 500k tokens
-    combined_limit = min(50_000 * max(len(text_keys), 1), 500_000)
+    # Per-text contribution × number of texts, capped for host memory (see README).
+    combined_limit = min(
+        _PER_TEXT_TOKEN_CAP * max(len(text_keys), 1),
+        _COMBINED_TOKEN_CAP,
+    )
     return NgramModel(source, max_n=max_n, token_limit=combined_limit)
 
 
@@ -648,7 +667,8 @@ def sidebar() -> tuple:
             help=(
                 "Combine texts to create a richer corpus. "
                 "Each bundled text contributes up to 50 k tokens; "
-                "combined corpus is capped at 500 k tokens."
+                f"combined corpus is capped at {_COMBINED_TOKEN_CAP // 1000} k tokens "
+                "(memory limit on cloud hosts)."
             ),
         )
 
@@ -679,7 +699,7 @@ def sidebar() -> tuple:
                 f"{len(selected_texts)} text(s) selected "
                 f"({', '.join(cats_used)}) — "
                 f"combined corpus up to "
-                f"{min(50 * len(selected_texts), 500):,} k tokens."
+                f"{min(50 * len(selected_texts), _COMBINED_TOKEN_CAP // 1000):,} k tokens."
             )
 
         # ── Model settings ────────────────────────────────────────────────────

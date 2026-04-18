@@ -32,6 +32,33 @@ Your browser will open automatically at `http://localhost:8501`.
 
 ---
 
+## Deploying on Streamlit Community Cloud
+
+1. Push this repository to GitHub and sign in at [share.streamlit.io](https://share.streamlit.io).
+2. **Create app** → pick the repo → **Main file path:** `app.py`.
+3. Under **Advanced settings → Secrets**, add your course password (plain TOML):
+   ```toml
+   password = "your-password-here"
+   ```
+4. Deploy. The first build may take a few minutes.
+
+### If the app shows “Oh no. Error running app.”
+
+Open the app on Streamlit Cloud → **Manage app** (⋮) → **Logs** and read the traceback.
+
+Common causes:
+
+| Cause | What to do |
+| --- | --- |
+| **Out of memory** | The n-gram tables grow quickly with corpus size. This project caps the combined corpus at **150 k tokens** by default so the app fits Streamlit’s free tier (~1 GB RAM). Do not raise the cap unless your host has more memory. |
+| **Invalid Secrets** | Secrets must be valid TOML. Use `password = "..."` with straight ASCII quotes. |
+| **Wrong main file** | Main file path must be `app.py` at the repository root (same folder as `requirements.txt`). |
+| **Missing dependency** | Ensure `requirements.txt` is committed and lists `streamlit`, `numpy`, and `plotly`. |
+
+Optional: set environment variable `LEXAITIS_COMBINED_TOKEN_CAP` (integer) in **Advanced settings** on Streamlit Cloud if you self-host with more RAM and need a larger cap.
+
+---
+
 ## What students can do
 
 | Control | What it does |
